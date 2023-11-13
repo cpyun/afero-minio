@@ -10,6 +10,15 @@ import (
 	"os"
 )
 
+const (
+	maxWriteSize int = 1e4
+)
+
+type readerAtCloser interface {
+	io.ReadCloser
+	io.ReaderAt
+}
+
 type minioFileResource struct {
 	ctx context.Context
 
@@ -19,10 +28,10 @@ type minioFileResource struct {
 	name     string
 	fileMode os.FileMode
 
-	currentGcsSize int64
-	offset         int64
-	reader         io.ReadCloser
-	writer         io.WriteCloser
+	currentIoSize int64
+	offset        int64
+	reader        readerAtCloser
+	writer        io.WriteCloser
 
 	closed bool
 }
@@ -65,7 +74,7 @@ func (o *minioFileResource) maybeCloseWriter() error {
 	// commit the results.)
 	// For small writes it can be more efficient
 	// to keep the original reader but that is for another iteration
-	if o.currentGcsSize > o.offset {
+	if o.currentIoSize > o.offset {
 
 	}
 
@@ -84,7 +93,7 @@ func (o *minioFileResource) ReadAt(p []byte, off int64) (n int, err error) {
 	// Assume that if the reader is open; it is at the correct offset
 	// a good performance assumption that we must ensure holds
 	if off == o.offset && o.reader != nil {
-		n, err = o.reader.Read(p)
+		n, err = o.reader.ReadAt(p, off)
 		o.offset += int64(n)
 		return n, err
 	}
@@ -94,19 +103,15 @@ func (o *minioFileResource) ReadAt(p []byte, off int64) (n int, err error) {
 		return 0, err
 	}
 
-	opts := minio.GetObjectOptions{
-		PartNumber: int(off),
-	}
+	opts := minio.GetObjectOptions{}
 	r, err := o.fs.client.GetObject(o.ctx, o.bucket.Name, o.name, opts)
 	if err != nil {
 		return 0, err
 	}
-	//defer r.Close()
-
 	o.reader = r
 	o.offset = off
 
-	read, err := o.reader.Read(p)
+	read, err := r.ReadAt(p, off)
 	o.offset += int64(read)
 	return read, err
 }
@@ -126,7 +131,7 @@ func (o *minioFileResource) WriteAt(b []byte, off int64) (n int, err error) {
 	}
 
 	// WriteAt to a non existing file
-	if off > 0 {
+	if off > o.currentIoSize {
 		return 0, ErrOutOfRange
 	}
 	o.offset = off
@@ -134,10 +139,15 @@ func (o *minioFileResource) WriteAt(b []byte, off int64) (n int, err error) {
 
 	// byt 写入 buffer
 	buffer := bytes.NewReader(b)
-
 	// 写入 minio
 	opts := minio.PutObjectOptions{
 		ContentType: http.DetectContentType(b),
+	}
+	if off > 0 {
+		opts.PartSize = uint64(off)
+		opts.NumThreads = 8
+		opts.ConcurrentStreamParts = false
+		opts.DisableMultipart = true
 	}
 	_, err = o.fs.client.PutObject(o.ctx, o.bucket.Name, o.name, buffer, buffer.Size(), opts)
 	if err != nil {
@@ -156,32 +166,5 @@ func min(x, y int) int {
 }
 
 func (o *minioFileResource) Truncate(wantedSize int64) error {
-	if wantedSize < 0 {
-		return ErrOutOfRange
-	}
-
-	if err := o.maybeCloseIo(); err != nil {
-		return err
-	}
-
-	r, err := o.fs.client.GetObject(o.ctx, o.bucket.Name, o.name, minio.GetObjectOptions{})
-	if err != nil {
-		return err
-	}
-	defer r.Close()
-
-	//if r.Size() < wantedSize {
-	//	return ErrOutOfRange
-	//}
-
-	srcBuffer := make([]byte, wantedSize)
-	_, err = o.ReadAt(srcBuffer, wantedSize)
-	if err != nil {
-		return err
-	}
-	src := bytes.NewReader(srcBuffer)
-
-	_, err = o.fs.client.PutObject(o.ctx, o.bucket.Name, o.name, src, src.Size(), minio.PutObjectOptions{})
-
-	return err
+	return ErrNotSupported
 }

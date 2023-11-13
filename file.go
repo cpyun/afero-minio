@@ -38,7 +38,7 @@ func NewMinioFile(ctx context.Context, fs *Fs, bucket *minio.BucketInfo, openFla
 			name:     name,
 			fileMode: fileMode,
 
-			currentGcsSize: 0,
+			currentIoSize: 0,
 
 			offset: 0,
 			reader: nil,
@@ -90,11 +90,11 @@ func (o *MinioFile) Seek(newOffset int64, whence int) (int64, error) {
 	}
 
 	switch whence {
-	case 0:
+	case io.SeekStart:
 		o.fhOffset = newOffset
-	case 1:
+	case io.SeekCurrent:
 		o.fhOffset += newOffset
-	case 2:
+	case io.SeekEnd:
 		o.fhOffset = stat.Size() + newOffset
 	}
 	return o.fhOffset, nil
