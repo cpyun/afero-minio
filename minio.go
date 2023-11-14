@@ -14,7 +14,7 @@ type MinioFs struct {
 	source *Fs
 }
 
-func NewMinio(ctx context.Context, bucket string, client *minio.Client) afero.Fs {
+func NewMinio(ctx context.Context, client *minio.Client, bucket string) afero.Fs {
 	minioFs := NewMinioFs(ctx, client)
 	return &MinioFs{
 		bucket: bucket,
