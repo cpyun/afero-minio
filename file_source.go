@@ -10,9 +10,9 @@ import (
 	"os"
 )
 
-const (
-	maxWriteSize int = 1e4
-)
+//const (
+//	maxWriteSize int = 1e4
+//)
 
 type readerAtCloser interface {
 	io.ReadCloser
@@ -158,13 +158,6 @@ func (o *minioFileResource) WriteAt(b []byte, off int64) (n int, err error) {
 	return buffer.Len(), nil
 }
 
-func min(x, y int) int {
-	if x < y {
-		return x
-	}
-	return y
-}
-
-func (o *minioFileResource) Truncate(wantedSize int64) error {
+func (o *minioFileResource) Truncate(_ int64) error {
 	return ErrNotSupported
 }
