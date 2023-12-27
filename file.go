@@ -160,9 +160,6 @@ func (o *MinioFile) readdirImpl(count int) (res []*FileInfo, err error) {
 	}
 	objs := o.resource.fs.client.ListObjects(o.resource.ctx, o.resource.bucket.Name, opts)
 	for obj := range objs {
-		if count > 0 {
-
-		}
 		tmp := newFileInfoFromAttrs(obj, o.resource.fileMode)
 		if tmp.Name() == "" {
 			// neither object.Name, not object.Prefix were present - so let's skip this unknown thing
