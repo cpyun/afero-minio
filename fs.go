@@ -47,12 +47,12 @@ func (fs *Fs) normSeparators(s string) string {
 	return strings.Replace(strings.Replace(s, "\\", fs.separator, -1), "/", fs.separator, -1)
 }
 
-func (fs *Fs) ensureTrailingSeparator(s string) string {
-	if len(s) > 0 && !strings.HasSuffix(s, fs.separator) {
-		return s + fs.separator
-	}
-	return s
-}
+//func (fs *Fs) ensureTrailingSeparator(s string) string {
+//	if len(s) > 0 && !strings.HasSuffix(s, fs.separator) {
+//		return s + fs.separator
+//	}
+//	return s
+//}
 
 func (fs *Fs) ensureNoLeadingSeparator(s string) string {
 	if len(s) > 0 && strings.HasPrefix(s, fs.separator) {
@@ -101,12 +101,12 @@ func (fs *Fs) setBucket(name string) {
 	}
 }
 
-func (fs *Fs) getObj(name string) (*minio.Object, error) {
-	bucketName, path := fs.splitName(name)
-	getObjectOptions := minio.GetObjectOptions{}
-
-	return fs.client.GetObject(fs.ctx, bucketName, path, getObjectOptions)
-}
+//func (fs *Fs) getObj(name string) (*minio.Object, error) {
+//	bucketName, path := fs.splitName(name)
+//	getObjectOptions := minio.GetObjectOptions{}
+//
+//	return fs.client.GetObject(fs.ctx, bucketName, path, getObjectOptions)
+//}
 
 func (fs *Fs) Name() string { return "MinioFs" }
 
@@ -125,7 +125,7 @@ func (fs *Fs) Mkdir(name string, _ os.FileMode) error {
 	return nil
 }
 
-func (fs *Fs) MkdirAll(path string, perm os.FileMode) error {
+func (fs *Fs) MkdirAll(_ string, _ os.FileMode) error {
 	return errors.New("method MkdirAll is not implemented for Minio")
 }
 

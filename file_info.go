@@ -21,50 +21,6 @@ type FileInfo struct {
 	fileMode os.FileMode
 }
 
-func newFileInfo(name string, fs *Fs, fileMode os.FileMode) (*FileInfo, error) {
-	res := &FileInfo{
-		name:     name,
-		size:     folderSize,
-		updated:  time.Time{},
-		isDir:    false,
-		fileMode: fileMode,
-	}
-
-	//obj, err := fs.getObj(name)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//objAttrs, err := obj.Attrs(fs.ctx)
-	//if err != nil {
-	//	if err.Error() == ErrEmptyObjectName.Error() {
-	//		// It's a root folder here, we return right away
-	//		res.name = fs.ensureTrailingSeparator(res.name)
-	//		res.isDir = true
-	//		return res, nil
-	//	} else if err.Error() == ErrObjectDoesNotExist.Error() {
-	//		// Folders do not actually "exist" in GCloud, so we have to check, if something exists with
-	//		// such a prefix
-	//		bucketName, bucketPath := fs.splitName(name)
-	//		it := fs.client.Bucket(bucketName).Objects(
-	//			fs.ctx, &storage.Query{Delimiter: fs.separator, Prefix: bucketPath, Versions: false})
-	//		if _, err = it.Next(); err == nil {
-	//			res.name = fs.ensureTrailingSeparator(res.name)
-	//			res.isDir = true
-	//			return res, nil
-	//		}
-	//
-	//		return nil, ErrFileNotFound
-	//	}
-	//	return nil, err
-	//}
-	//
-	//res.size = objAttrs.Size
-	//res.updated = objAttrs.Updated
-
-	return res, nil
-}
-
 func newFileInfoFromAttrs(obj minio.ObjectInfo, fileMode os.FileMode) *FileInfo {
 	res := &FileInfo{
 		eTag:     obj.ETag,
