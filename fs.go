@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/minio/minio-go/v7"
+	"github.com/spf13/afero"
 	"log"
 	"os"
 	"strings"
@@ -110,7 +111,7 @@ func (fs *Fs) setBucket(name string) {
 
 func (fs *Fs) Name() string { return "MinioFs" }
 
-func (fs *Fs) Create(name string) (*MinioFile, error) {
+func (fs *Fs) Create(name string) (afero.File, error) {
 	return fs.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0)
 }
 
@@ -129,11 +130,11 @@ func (fs *Fs) MkdirAll(_ string, _ os.FileMode) error {
 	return errors.New("method MkdirAll is not implemented for Minio")
 }
 
-func (fs *Fs) Open(name string) (*MinioFile, error) {
+func (fs *Fs) Open(name string) (afero.File, error) {
 	return fs.OpenFile(name, os.O_RDONLY, 0)
 }
 
-func (fs *Fs) OpenFile(name string, flag int, fileMode os.FileMode) (*MinioFile, error) {
+func (fs *Fs) OpenFile(name string, flag int, fileMode os.FileMode) (afero.File, error) {
 	var file *MinioFile
 	var err error
 
