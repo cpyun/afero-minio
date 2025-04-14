@@ -1,13 +1,14 @@
-package minio
+package miniofs
 
 import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/minio/minio-go/v7"
 	"io"
 	"net/http"
 	"os"
+
+	"github.com/minio/minio-go/v7"
 )
 
 //const (
@@ -21,10 +22,8 @@ type readerAtCloser interface {
 
 type minioFileResource struct {
 	ctx context.Context
+	fs  *Fs
 
-	fs *Fs
-
-	bucket   *minio.BucketInfo
 	name     string
 	fileMode os.FileMode
 
@@ -104,7 +103,7 @@ func (o *minioFileResource) ReadAt(p []byte, off int64) (n int, err error) {
 	}
 
 	opts := minio.GetObjectOptions{}
-	r, err := o.fs.client.GetObject(o.ctx, o.bucket.Name, o.name, opts)
+	r, err := o.fs.client.GetObject(o.ctx, o.fs.bucket, o.name, opts)
 	if err != nil {
 		return 0, err
 	}
@@ -149,7 +148,7 @@ func (o *minioFileResource) WriteAt(b []byte, off int64) (n int, err error) {
 		opts.ConcurrentStreamParts = false
 		opts.DisableMultipart = true
 	}
-	_, err = o.fs.client.PutObject(o.ctx, o.bucket.Name, o.name, buffer, buffer.Size(), opts)
+	_, err = o.fs.client.PutObject(o.ctx, o.fs.bucket, o.name, buffer, buffer.Size(), opts)
 	if err != nil {
 		return 0, err
 	}

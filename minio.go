@@ -1,24 +1,30 @@
-package minio
+package miniofs
 
 import (
 	"context"
-	"github.com/minio/minio-go/v7"
-	"github.com/spf13/afero"
+	"net"
+	"net/url"
 	"os"
-	"path/filepath"
 	"time"
+
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/spf13/afero"
 )
 
 type MinioFs struct {
-	bucket string
 	source *Fs
 }
 
-func NewMinio(ctx context.Context, client *minio.Client, bucket string) afero.Fs {
-	minioFs := NewMinioFs(ctx, client)
+func NewMinio(ctx context.Context, dsn string) afero.Fs {
+	url, _ := url.Parse(dsn)
+	minioOpts, _ := ParseURL(dsn)
+
+	client, _ := minio.New(url.Host, minioOpts)
+	fs := NewFs(ctx, client, url.Path[1:])
+
 	return &MinioFs{
-		bucket: bucket,
-		source: minioFs,
+		source: fs,
 	}
 }
 
@@ -43,58 +49,84 @@ func (fs *MinioFs) Open(name string) (afero.File, error) {
 }
 
 func (fs *MinioFs) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
-	if fs.bucket != "" {
-		name = filepath.Join(fs.bucket, name)
-	}
 	return fs.source.OpenFile(name, flag, perm)
 }
 
 func (fs *MinioFs) Remove(name string) error {
-	if fs.bucket != "" {
-		name = filepath.Join(fs.bucket, name)
-	}
 	return fs.source.Remove(name)
 }
 
 func (fs *MinioFs) RemoveAll(path string) error {
-	if fs.bucket != "" {
-		path = filepath.Join(fs.bucket, path)
-	}
 	return fs.source.RemoveAll(path)
 }
 
 func (fs *MinioFs) Rename(oldname, newname string) error {
-	if fs.bucket != "" {
-		oldname = filepath.Join(fs.bucket, oldname)
-		newname = filepath.Join(fs.bucket, newname)
-	}
 	return fs.source.Rename(oldname, newname)
 }
 
 func (fs *MinioFs) Stat(name string) (os.FileInfo, error) {
-	if fs.bucket != "" {
-		name = filepath.Join(fs.bucket, name)
-	}
 	return fs.source.Stat(name)
 }
 
 func (fs *MinioFs) Chmod(name string, mode os.FileMode) error {
-	if fs.bucket != "" {
-		name = filepath.Join(fs.bucket, name)
-	}
 	return fs.source.Chmod(name, mode)
 }
 
 func (fs *MinioFs) Chtimes(name string, atime time.Time, mtime time.Time) error {
-	if fs.bucket != "" {
-		name = filepath.Join(fs.bucket, name)
-	}
 	return fs.source.Chtimes(name, atime, mtime)
 }
 
 func (fs *MinioFs) Chown(name string, uid, gid int) error {
-	if fs.bucket != "" {
-		name = filepath.Join(fs.bucket, name)
-	}
 	return fs.source.Chown(name, uid, gid)
+}
+
+func ParseURL(minioURL string) (*minio.Options, error) {
+	u, err := url.Parse(minioURL)
+	if err != nil {
+		return nil, err
+	}
+
+	o := &minio.Options{
+		Region: "us-east-1",
+	}
+	// credentials
+	username, password := getUserPassword(u)
+	token := u.Query().Get("token")
+	o.Creds = credentials.NewStaticV4(username, password, token)
+	//
+	if u.Scheme == "https" {
+		o.Secure = true
+	}
+
+	//
+	if u.Query().Has("region") {
+		o.Region = u.Query().Get("region")
+	}
+
+	return o, nil
+}
+
+func getUserPassword(u *url.URL) (string, string) {
+	var user, password string
+	if u.User != nil {
+		user = u.User.Username()
+		if p, ok := u.User.Password(); ok {
+			password = p
+		}
+	}
+	return user, password
+}
+
+func getHostPortWithDefaults(u *url.URL) (string, string) {
+	host, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		host = u.Host
+	}
+	if host == "" {
+		host = "localhost"
+	}
+	if port == "" {
+		port = "9000"
+	}
+	return host, port
 }

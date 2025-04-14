@@ -1,11 +1,12 @@
-package minio
+package miniofs
 
 import (
-	"github.com/minio/minio-go/v7"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/minio/minio-go/v7"
 )
 
 const (
