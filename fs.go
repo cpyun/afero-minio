@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -22,6 +23,14 @@ type Fs struct {
 	client    *minio.Client
 	bucket    string
 	separator string
+}
+
+func NewMinioFs(ctx context.Context, dsn string) afero.Fs {
+	url, _ := url.Parse(dsn)
+	minioOpts, _ := ParseURL(dsn)
+
+	client, _ := minio.New(url.Host, minioOpts)
+	return NewFs(ctx, client, url.Path[1:])
 }
 
 func NewFs(ctx context.Context, client *minio.Client, bucket string) *Fs {

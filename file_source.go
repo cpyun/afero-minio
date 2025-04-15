@@ -136,9 +136,9 @@ func (o *minioFileResource) WriteAt(b []byte, off int64) (n int, err error) {
 	o.offset = off
 	//o.writer =
 
-	// byt 写入 buffer
+	// byt buffer
 	buffer := bytes.NewReader(b)
-	// 写入 minio
+	// minio
 	opts := minio.PutObjectOptions{
 		ContentType: http.DetectContentType(b),
 	}

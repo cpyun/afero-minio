@@ -33,7 +33,6 @@ func newFileInfoFromAttrs(obj minio.ObjectInfo, fileMode os.FileMode) *FileInfo 
 	}
 
 	if res.name == "" {
-		// It's a virtual folder! It does not have a name, but prefix - this is how GCS API
 		// deals with them at the moment
 		//res.name = "folder"
 		res.size = folderSize

@@ -24,7 +24,7 @@ import (
     "context"
     
     "github.com/minio/minio-go/v7"
-	miniofs "github.com/cpyun/afero-minio"
+	"github.com/cpyun/afero-minio"
 )
 
 func main() {
@@ -34,7 +34,7 @@ func main() {
     fs := miniofs.NewMinioFs(context.Background(), minioClient)
     
 	// And use it
-	file, _ := fs.OpenFile("text.txt", os.O_WRONLY, 0777)
+	file, _ := fs.Open("text.txt")
 	defer file.Close()
 	file.WriteString("Hello world.")
 }
