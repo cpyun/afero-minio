@@ -1,45 +1,44 @@
-package minio
+package miniofs
 
 import (
 	"context"
 	"errors"
-	"github.com/minio/minio-go/v7"
-	"github.com/spf13/afero"
 	"log"
+	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/minio/minio-go/v7"
+	"github.com/spf13/afero"
 )
 
 const (
 	defaultFileMode = 0o755
-	gsPrefix        = "gs://"
 )
 
 // Fs is a Fs implementation that uses functions provided by google cloud storage
 type Fs struct {
 	ctx       context.Context
 	client    *minio.Client
+	bucket    string
 	separator string
-
-	buckets         map[string]*minio.BucketInfo
-	rawMinioObjects map[string]*MinioFile
-
-	autoRemoveEmptyFolders bool // trigger for creating "virtual folders" (not required by Minio)
 }
 
-func NewMinioFs(ctx context.Context, client *minio.Client) *Fs {
-	return NewMinioFsWithSeparator(ctx, client, "/")
+func NewMinioFs(ctx context.Context, dsn string) afero.Fs {
+	url, _ := url.Parse(dsn)
+	minioOpts, _ := ParseURL(dsn)
+
+	client, _ := minio.New(url.Host, minioOpts)
+	return NewFs(ctx, client, url.Path[1:])
 }
 
-func NewMinioFsWithSeparator(ctx context.Context, client *minio.Client, folderSep string) *Fs {
+func NewFs(ctx context.Context, client *minio.Client, bucket string) *Fs {
 	return &Fs{
-		ctx:                    ctx,
-		client:                 client,
-		separator:              folderSep,
-		buckets:                make(map[string]*minio.BucketInfo),
-		rawMinioObjects:        make(map[string]*MinioFile),
-		autoRemoveEmptyFolders: true,
+		ctx:       ctx,
+		client:    client,
+		bucket:    bucket,
+		separator: "/",
 	}
 }
 
@@ -48,58 +47,12 @@ func (fs *Fs) normSeparators(s string) string {
 	return strings.Replace(strings.Replace(s, "\\", fs.separator, -1), "/", fs.separator, -1)
 }
 
-//func (fs *Fs) ensureTrailingSeparator(s string) string {
-//	if len(s) > 0 && !strings.HasSuffix(s, fs.separator) {
-//		return s + fs.separator
-//	}
-//	return s
-//}
-
 func (fs *Fs) ensureNoLeadingSeparator(s string) string {
 	if len(s) > 0 && strings.HasPrefix(s, fs.separator) {
 		s = s[len(fs.separator):]
 	}
 
 	return s
-}
-
-func ensureNoPrefix(s string) string {
-	if len(s) > 0 && strings.HasPrefix(s, gsPrefix) {
-		return s[len(gsPrefix):]
-	}
-	return s
-}
-
-func validateName(s string) error {
-	if len(s) == 0 {
-		return ErrNoBucketInName
-	}
-	return nil
-}
-
-// Splits provided name into bucket name and path
-func (fs *Fs) splitName(name string) (bucketName string, path string) {
-	splitName := strings.Split(name, fs.separator)
-
-	return splitName[0], strings.Join(splitName[1:], fs.separator)
-}
-
-// getBucket gets bucket info
-//
-func (fs *Fs) getBucket(name string) (*minio.BucketInfo, error) {
-	bucket, is := fs.buckets[name]
-	if !is {
-		fs.setBucket(name)
-		return fs.buckets[name], nil
-	}
-	return bucket, nil
-}
-
-func (fs *Fs) setBucket(name string) {
-	fs.buckets[name] = &minio.BucketInfo{
-		Name:         name,
-		CreationDate: time.Now(),
-	}
 }
 
 //func (fs *Fs) getObj(name string) (*minio.Object, error) {
@@ -116,18 +69,11 @@ func (fs *Fs) Create(name string) (afero.File, error) {
 }
 
 func (fs *Fs) Mkdir(name string, _ os.FileMode) error {
-	// create bucket
-	err := fs.client.MakeBucket(fs.ctx, name, minio.MakeBucketOptions{})
-	if err != nil {
-		return err
-	}
-
-	fs.setBucket(name)
-	return nil
+	return ErrNotSupported
 }
 
 func (fs *Fs) MkdirAll(_ string, _ os.FileMode) error {
-	return errors.New("method MkdirAll is not implemented for Minio")
+	return ErrNotSupported
 }
 
 func (fs *Fs) Open(name string) (afero.File, error) {
@@ -135,96 +81,36 @@ func (fs *Fs) Open(name string) (afero.File, error) {
 }
 
 func (fs *Fs) OpenFile(name string, flag int, fileMode os.FileMode) (afero.File, error) {
-	var file *MinioFile
 	var err error
-
-	name = fs.ensureNoLeadingSeparator(fs.normSeparators(ensureNoPrefix(name)))
-	if err = validateName(name); err != nil {
-		return nil, err
+	if flag&os.O_APPEND != 0 {
+		return nil, errors.New("appending files will lead to trouble")
 	}
 
-	// folder creation logic has to additionally check for folder name presence
-	bucketName, path := fs.splitName(name)
-	bucket, err := fs.getBucket(bucketName)
-	if err != nil {
-		return nil, err
-	}
-	if path == "" {
-		// the API would throw "Error 400: No object name, required", but this one is more consistent
-		return nil, ErrEmptyObjectName
+	name = fs.ensureNoLeadingSeparator(fs.normSeparators(name))
+	file := NewMinioFile(fs.ctx, fs, flag, fileMode, name)
+	//
+	if flag&os.O_CREATE != 0 {
+		_, err = file.WriteString("")
 	}
 
-	f, found := fs.rawMinioObjects[name]
-	if found {
-		file = NewMinioFileFromOldFH(flag, fileMode, f.resource)
-	} else {
-		file = NewMinioFile(fs.ctx, fs, bucket, flag, fileMode, path)
-	}
-	fs.rawMinioObjects[name] = file
-
-	//if flag == os.O_RDONLY {
-	//	_, err = file.Stat()
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//}
-	//
-	//if flag&os.O_TRUNC != 0 {
-	//	err = file.resource.obj.Delete(fs.ctx)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//	return fs.Create(name)
-	//}
-	//
-	//if flag&os.O_APPEND != 0 {
-	//	_, err = file.Seek(0, 2)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//}
-	//
-	//if flag&os.O_CREATE != 0 {
-	//	_, err = file.Stat()
-	//	if err == nil { // the file actually exists
-	//		return nil, syscall.EPERM
-	//	}
-	//
-	//	_, err = file.WriteString("")
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//}
-
-	return file, nil
+	return file, err
 }
 
 func (fs *Fs) Remove(name string) error {
-	name = fs.ensureNoLeadingSeparator(fs.normSeparators(ensureNoPrefix(name)))
-	if err := validateName(name); err != nil {
-		return err
-	}
-
-	bucketName, path := fs.splitName(name)
-
-	return fs.client.RemoveObject(fs.ctx, bucketName, path, minio.RemoveObjectOptions{
+	name = fs.ensureNoLeadingSeparator(fs.normSeparators(name))
+	return fs.client.RemoveObject(fs.ctx, fs.bucket, name, minio.RemoveObjectOptions{
 		GovernanceBypass: true,
 	})
 }
 
 func (fs *Fs) RemoveAll(path string) error {
-	path = fs.ensureNoLeadingSeparator(fs.normSeparators(ensureNoPrefix(path)))
-	if err := validateName(path); err != nil {
-		return err
-	}
+	path = fs.ensureNoLeadingSeparator(fs.normSeparators(path))
 
-	bucketName, dir := fs.splitName(path)
 	objectsCh := make(chan minio.ObjectInfo)
-
 	go func() {
 		defer close(objectsCh)
-		opts := minio.ListObjectsOptions{Prefix: dir, Recursive: true}
-		for object := range fs.client.ListObjects(fs.ctx, bucketName, opts) {
+		opts := minio.ListObjectsOptions{Prefix: path, Recursive: true}
+		for object := range fs.client.ListObjects(fs.ctx, fs.bucket, opts) {
 			if object.Err != nil {
 				log.Fatalln(object.Err)
 			}
@@ -232,7 +118,7 @@ func (fs *Fs) RemoveAll(path string) error {
 		}
 	}()
 
-	errorCh := fs.client.RemoveObjects(fs.ctx, bucketName, objectsCh, minio.RemoveObjectsOptions{})
+	errorCh := fs.client.RemoveObjects(fs.ctx, fs.bucket, objectsCh, minio.RemoveObjectsOptions{})
 	for e := range errorCh {
 		return errors.New("Failed to remove " + e.ObjectName + ", error: " + e.Err.Error())
 	}
@@ -245,29 +131,18 @@ func (fs *Fs) Rename(oldName, newName string) error {
 		return nil
 	}
 
-	oldName = fs.ensureNoLeadingSeparator(fs.normSeparators(ensureNoPrefix(oldName)))
-	if err := validateName(oldName); err != nil {
-		return err
-	}
-
-	newName = fs.ensureNoLeadingSeparator(fs.normSeparators(ensureNoPrefix(newName)))
-	if err := validateName(newName); err != nil {
-		return err
-	}
-
-	oldBucketName, oldPath := fs.splitName(oldName)
-	newBucketName, newPath := fs.splitName(newName)
+	oldName = fs.ensureNoLeadingSeparator(fs.normSeparators(oldName))
+	newName = fs.ensureNoLeadingSeparator(fs.normSeparators(newName))
 
 	// Source object
 	src := minio.CopySrcOptions{
-		Bucket: oldBucketName,
-		Object: oldPath,
+		Bucket: fs.bucket,
+		Object: oldName,
 	}
 	dst := minio.CopyDestOptions{
-		Bucket: newBucketName,
-		Object: newPath,
+		Bucket: fs.bucket,
+		Object: newName,
 	}
-
 	_, err := fs.client.CopyObject(fs.ctx, dst, src)
 	if err != nil {
 		return err
@@ -277,18 +152,9 @@ func (fs *Fs) Rename(oldName, newName string) error {
 }
 
 func (fs *Fs) Stat(name string) (os.FileInfo, error) {
-	name = fs.ensureNoLeadingSeparator(fs.normSeparators(ensureNoPrefix(name)))
-	if err := validateName(name); err != nil {
-		return nil, err
-	}
+	name = fs.ensureNoLeadingSeparator(fs.normSeparators(name))
 
-	bucketName, path := fs.splitName(name)
-	bucket, err := fs.getBucket(bucketName)
-	if err != nil {
-		return nil, err
-	}
-
-	file := NewMinioFile(fs.ctx, fs, bucket, os.O_RDWR, defaultFileMode, path)
+	file := NewMinioFile(fs.ctx, fs, os.O_RDWR, defaultFileMode, name)
 	return file.Stat()
 }
 

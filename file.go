@@ -1,4 +1,4 @@
-package minio
+package miniofs
 
 import (
 	"context"
@@ -21,20 +21,14 @@ type MinioFile struct {
 	resource  *minioFileResource
 }
 
-func NewMinioFile(ctx context.Context, fs *Fs, bucket *minio.BucketInfo, openFlags int,
-	// Unused: there is no use to the file mode in GCloud just yet - but we keep it here, just in case we need it
-	fileMode os.FileMode,
-	name string,
-) *MinioFile {
+func NewMinioFile(ctx context.Context, fs *Fs, openFlags int, fileMode os.FileMode, name string) *MinioFile {
 	return &MinioFile{
 		openFlags: openFlags,
 		fhOffset:  0,
 		closed:    false,
 		resource: &minioFileResource{
-			ctx: ctx,
-			fs:  fs,
-
-			bucket:   bucket,
+			ctx:      ctx,
+			fs:       fs,
 			name:     name,
 			fileMode: fileMode,
 
@@ -45,18 +39,6 @@ func NewMinioFile(ctx context.Context, fs *Fs, bucket *minio.BucketInfo, openFla
 			writer: nil,
 		},
 	}
-}
-
-func NewMinioFileFromOldFH(openFlags int, fileMode os.FileMode, oldFile *minioFileResource) *MinioFile {
-	res := &MinioFile{
-		openFlags: openFlags,
-		fhOffset:  0,
-		closed:    false,
-		resource:  oldFile,
-	}
-	res.resource.fileMode = fileMode
-
-	return res
 }
 
 func (o *MinioFile) Close() error {
@@ -136,8 +118,9 @@ func (o *MinioFile) Name() string {
 	return filepath.FromSlash(o.resource.name)
 }
 
-func (o *MinioFile) readdirImpl(count int) (res []*FileInfo, err error) {
-	err = o.Sync()
+func (o *MinioFile) readdirImpl(count int) ([]*FileInfo, error) {
+	var res []*FileInfo
+	err := o.Sync()
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +141,7 @@ func (o *MinioFile) readdirImpl(count int) (res []*FileInfo, err error) {
 		Recursive: true,
 		Prefix:    o.resource.name,
 	}
-	objs := o.resource.fs.client.ListObjects(o.resource.ctx, o.resource.bucket.Name, opts)
+	objs := o.resource.fs.client.ListObjects(o.resource.ctx, o.resource.fs.bucket, opts)
 	for obj := range objs {
 		tmp := newFileInfoFromAttrs(obj, o.resource.fileMode)
 		if tmp.Name() == "" {
@@ -208,7 +191,7 @@ func (o *MinioFile) Stat() (os.FileInfo, error) {
 		return nil, err
 	}
 
-	stat, err := o.resource.fs.client.StatObject(o.resource.ctx, o.resource.bucket.Name, o.resource.name, minio.StatObjectOptions{})
+	stat, err := o.resource.fs.client.StatObject(o.resource.ctx, o.resource.fs.bucket, o.resource.name, minio.StatObjectOptions{})
 	if err != nil {
 		return nil, err
 	}
